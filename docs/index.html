@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Record and Upload Audio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        button, input {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        #status {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Record and Upload Audio</h1>
+    <button id="recordButton">Start Recording</button>
+    <button id="stopButton" disabled>Stop Recording</button>
+    <audio id="audioPlayback" controls></audio>
+    <form id="uploadForm">
+        <input type="password" id="password" placeholder="Enter upload password" required>
+        <input type="text" id="githubToken" placeholder="GitHub Personal Access Token" required>
+        <button type="submit">Upload to GitHub</button>
+    </form>
+    <p id="status"></p>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const recordButton = document.getElementById('recordButton');
+        const stopButton = document.getElementById('stopButton');
+        const audioPlayback = document.getElementById('audioPlayback');
+        const uploadForm = document.getElementById('uploadForm');
+        const status = document.getElementById('status');
+
+        // Request microphone access and start recording
+        recordButton.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayback.src = audioUrl;
+
+                    // Convert to Base64 for GitHub Action
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob);
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result.split(',')[1];
+                        sessionStorage.setItem('audioBase64', base64Audio);
+                    };
+                };
+
+                mediaRecorder.start();
+                recordButton.disabled = true;
+                stopButton.disabled = false;
+                status.textContent = 'Recording...';
+            } catch (err) {
+                status.textContent = 'Error accessing microphone: ' + err.message;
+            }
+        });
+
+        // Stop recording
+        stopButton.addEventListener('click', () => {
+            mediaRecorder.stop();
+            recordButton.disabled = false;
+            stopButton.disabled = true;
+            status.textContent = 'Recording stopped. Ready to upload.';
+        });
+
+        // Handle form submission to trigger GitHub Action
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const githubToken = document.getElementById('githubToken').value;
+            const audioBase64 = sessionStorage.getItem('audioBase64');
+
+            if (!audioBase64) {
+                status.textContent = 'No audio recorded!';
+                return;
+            }
+
+            status.textContent = 'Uploading...';
+
+            try {
+                const response = await fetch('https://api.github.com/repos/yblebon/hooks/actions/workflows/upload-audio.yml/dispatches', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${githubToken}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ref: 'main',
+                        inputs: {
+                            audio: audioBase64,
+                            password: password
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    status.textContent = 'Upload triggered successfully!';
+                } else {
+                    const errorData = await response.json();
+                    status.textContent = 'Upload failed: ' + errorData.message;
+                }
+            } catch (err) {
+                status.textContent = 'Error: ' + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
