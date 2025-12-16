@@ -21,6 +21,8 @@
         .api-key-row label { flex-grow: 1; }
         .api-key-toggle { margin: 0 0 0.5rem 0; padding: 0.5rem; }
         .api-key-toggle input { width: auto; margin: 0; }
+        /* Style for the file size display */
+        #fileSizeInfo { margin-top: 0.5rem; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -35,6 +37,8 @@
     </div>
     <audio id="player" controls style="display:block; margin-top:1rem;"></audio>
     
+    <p id="fileSizeInfo" style="display:none;">File Size: <span id="fileSizeDisplay"></span></p>
+
     <h2>Upload Target</h2>
     <div class="radio-group">
         <label><input type="radio" name="uploadTarget" value="github" id="targetGithub" checked> GitHub</label>
@@ -73,10 +77,10 @@
                 <strong>1. Select Backend</strong>
                 <div class="api-select">
                     <label>
-                        <input type="radio" name="apiBackend" value="local" id="backendLocal" checked> Local (<code>/api/upload/local</code>)
+                        <input type="radio" name="apiBackend" value="local" id="backendLocal"> Local (<code>/api/upload/local</code>)
                     </label>
                     <label>
-                        <input type="radio" name="apiBackend" value="filebase" id="backendFilebase"> Filebase (<code>/api/upload/filebase</code>)
+                        <input type="radio" name="apiBackend" value="filebase" id="backendFilebase" checked> Filebase (<code>/api/upload/filebase</code>)
                     </label>
                 </div>
                 <p class="small" style="margin-top:0.5rem;">Base URL loaded from config: <code><span id="apiBaseUrlDisplay"></span></code></p>
@@ -85,7 +89,7 @@
             <div style="margin-bottom:1rem;">
                 <strong>2. Select Options</strong>
                 <label style="display:flex; align-items:center; gap: 10px; margin-top: 0.5rem;">
-                    <input type="checkbox" id="encryptCheckbox" checked style="width: auto; margin:0;">
+                    <input type="checkbox" id="encryptCheckbox" style="width: auto; margin:0;">
                     Encrypt Upload? (sets <code>encrypt={true/false}</code> in URL)
                 </label>
             </div>
@@ -109,31 +113,28 @@
     </div>
 
 <script type="module">
-// The entire application logic is wrapped in an async function to handle dynamic import
+// The entire application logic is wrapped in an async function and set as a module
 (async function(){
     // --- Configuration Loading and Fallback ---
     const DEFAULT_CONFIG = {
-        API_BASE_URL: 'https://backend-nine-kappa-72.vercel.app' // Fallback URL if config.js fails to load
+        API_BASE_URL: 'https://backend-nine-kappa-72.vercel.app' 
     };
     
     let config = DEFAULT_CONFIG;
     
     try {
-        // Dynamic import of the external config file (e.g., config.js)
+        // Loads config.js, which exports APP_CONFIG
         const module = await import('./config.js');
         
-        // Use the exported APP_CONFIG from the module
         if (module && module.APP_CONFIG) {
             config = module.APP_CONFIG;
         }
         
     } catch (e) {
-        // If the file is not found (404) or there's a syntax error, use the default config
-        // In a browser environment, a failed import() throws an error.
+        // Fallback if config.js is not found (404) or fails to load/parse
         console.warn(`Could not load external config file (config.js). Using default configuration. Error: ${e.message}`);
     }
 
-    // Assign the loaded (or default) configuration variables
     const API_BASE_URL = config.API_BASE_URL;
 
     // --- DOM Elements ---
@@ -148,7 +149,6 @@
     const saveTokenBtn = document.getElementById('saveTokenBtn');
     const clearTokenBtn = document.getElementById('clearTokenBtn');
     
-    // Custom API elements
     const targetGithub = document.getElementById('targetGithub');
     const targetCustom = document.getElementById('targetCustom');
     const githubOptions = document.getElementById('githubOptions');
@@ -157,19 +157,20 @@
     
     const customApiKeyInput = document.getElementById('customApiKey'); 
     const toggleApiKeyCheckbox = document.getElementById('toggleApiKey'); 
-    const apiBaseUrlDisplay = document.getElementById('apiBaseUrlDisplay'); 
+    const apiBaseUrlDisplay = document.getElementById('apiBaseUrlDisplay');
+    
+    const fileSizeInfo = document.getElementById('fileSizeInfo');
+    const fileSizeDisplay = document.getElementById('fileSizeDisplay');
 
-    // --- State Variables ---
+    // --- State Variables and Constants ---
     let mediaStream = null;
     let recorder = null;
     let chunks = [];
     let recordedBlob = null;
     const LS_KEY = 'gh_token_demo';
     
-    // Display the loaded config value
     apiBaseUrlDisplay.textContent = API_BASE_URL;
 
-    // HARDCODED API ENDPOINTS - Paths are relative to the base URL
     const API_ENDPOINTS = {
         'local': '/api/upload/local',
         'filebase': '/api/upload/filebase'
@@ -179,6 +180,15 @@
     // --- Utility Functions ---
     function setStatus(s){ status.textContent = s; }
 
+    /** Converts bytes to human-readable format (KB, MB). */
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
     function timestampString() {
         const d = new Date();
         const pad = n => String(n).padStart(2,'0');
@@ -208,7 +218,7 @@
         });
     }
 
-    // --- GitHub Utility Functions ---
+    // FIXED: Using standard Accept header
     async function getFileSha(owner, repo, path, branch, token) {
         const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}${branch ? '?ref=' + encodeURIComponent(branch) : ''}`;
         const r = await fetch(url, { headers: { Authorization: 'token ' + token, Accept: 'application/vnd.github.v3+json' }});
@@ -222,7 +232,7 @@
         }
     }
 
-    // --- Upload Handlers ---
+    // --- Upload Handlers (Unchanged logic) ---
     
     async function uploadToGitHub() {
         const owner = document.getElementById('owner').value.trim();
@@ -276,7 +286,6 @@
     async function uploadToCustomApi() {
         const apiKey = customApiKeyInput.value.trim(); 
         
-        // Safety check to notify user if fallback is used
         if (API_BASE_URL === DEFAULT_CONFIG.API_BASE_URL) {
              console.warn('Using fallback API Base URL.');
         }
@@ -298,7 +307,6 @@
             const encryptValue = encryptCheckbox.checked ? 'true' : 'false';
             const query = API_QUERY_TEMPLATE.replace('{encrypt}', encryptValue);
             
-            // CONSTRUCT FULL URL using the loaded config variable
             const url = API_BASE_URL + endpointPath + query;
             
             const formData = new FormData();
@@ -354,6 +362,7 @@
         setStatus('Saved token cleared.');
     });
 
+    // API Key Toggle Logic
     toggleApiKeyCheckbox.addEventListener('change', () => {
         customApiKeyInput.type = toggleApiKeyCheckbox.checked ? 'text' : 'password';
     });
@@ -367,25 +376,43 @@
     }
     targetGithub.addEventListener('change', toggleOptions);
     targetCustom.addEventListener('change', toggleOptions);
-    toggleOptions(); // Initial call to set correct display
+    toggleOptions(); 
 
     startBtn.addEventListener('click', async () => {
         try {
+            // Hide size info when starting a new recording
+            fileSizeInfo.style.display = 'none';
+            player.style.display = 'none';
+
+            // Request microphone access
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            recorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' }); 
+            
+            // Performance fix: Set a low bitrate (64kbps) for voice-optimized file size
+            recorder = new MediaRecorder(mediaStream, { 
+                mimeType: 'audio/webm; codecs=opus',
+                audioBitsPerSecond: 64000
+            }); 
+            
             chunks = [];
             recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+            
             recorder.onstop = () => {
                 recordedBlob = new Blob(chunks, { type: 'audio/webm' });
                 player.src = URL.createObjectURL(recordedBlob);
                 player.style.display = 'block';
                 playBtn.disabled = false;
                 uploadBtn.disabled = false;
+                
+                // Display the file size
+                fileSizeDisplay.textContent = formatBytes(recordedBlob.size);
+                fileSizeInfo.style.display = 'block';
+
                 setStatus('Recording stopped — ready to play/upload.');
             };
+
             recorder.start();
             startBtn.disabled = true;
-            stopBtn.disabled = false;
+            stopBtn.disabled = false; // FIXED: Enable stop button when recording starts
             setStatus('Recording...');
         } catch (err) {
             setStatus('Error accessing microphone: ' + (err.message || err));
@@ -395,6 +422,7 @@
     stopBtn.addEventListener('click', () => {
         if (recorder && recorder.state !== 'inactive') recorder.stop();
         if (mediaStream) {
+            // Stop all tracks (microphone access)
             mediaStream.getTracks().forEach(t => t.stop());
             mediaStream = null;
         }
