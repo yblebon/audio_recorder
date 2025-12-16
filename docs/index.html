@@ -79,6 +79,7 @@
                         <input type="radio" name="apiBackend" value="filebase" id="backendFilebase"> Filebase (<code>/api/upload/filebase</code>)
                     </label>
                 </div>
+                <p class="small" style="margin-top:0.5rem;">Base URL loaded from config: <code><span id="apiBaseUrlDisplay"></span></code></p>
             </div>
 
             <div style="margin-bottom:1rem;">
@@ -107,8 +108,34 @@
         <pre id="status">Idle</pre>
     </div>
 
-<script>
-(function(){
+<script type="module">
+// The entire application logic is wrapped in an async function to handle dynamic import
+(async function(){
+    // --- Configuration Loading and Fallback ---
+    const DEFAULT_CONFIG = {
+        API_BASE_URL: 'https://backend-nine-kappa-72.vercel.app' // Fallback URL if config.js fails to load
+    };
+    
+    let config = DEFAULT_CONFIG;
+    
+    try {
+        // Dynamic import of the external config file (e.g., config.js)
+        const module = await import('./config.js');
+        
+        // Use the exported APP_CONFIG from the module
+        if (module && module.APP_CONFIG) {
+            config = module.APP_CONFIG;
+        }
+        
+    } catch (e) {
+        // If the file is not found (404) or there's a syntax error, use the default config
+        // In a browser environment, a failed import() throws an error.
+        console.warn(`Could not load external config file (config.js). Using default configuration. Error: ${e.message}`);
+    }
+
+    // Assign the loaded (or default) configuration variables
+    const API_BASE_URL = config.API_BASE_URL;
+
     // --- DOM Elements ---
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -128,12 +155,9 @@
     const customApiOptions = document.getElementById('customApiOptions');
     const encryptCheckbox = document.getElementById('encryptCheckbox'); 
     
-    const customApiKeyInput = document.getElementById('customApiKey'); // NEW ID for easy access
-    const toggleApiKeyCheckbox = document.getElementById('toggleApiKey'); // NEW element for toggle
-
-    // NEW Backend radio buttons (kept for context, not modified)
-    // const backendLocal = document.getElementById('backendLocal');
-    // const backendFilebase = document.getElementById('backendFilebase');
+    const customApiKeyInput = document.getElementById('customApiKey'); 
+    const toggleApiKeyCheckbox = document.getElementById('toggleApiKey'); 
+    const apiBaseUrlDisplay = document.getElementById('apiBaseUrlDisplay'); 
 
     // --- State Variables ---
     let mediaStream = null;
@@ -142,8 +166,10 @@
     let recordedBlob = null;
     const LS_KEY = 'gh_token_demo';
     
-    // HARDCODED API ENDPOINTS 
-    const API_BASE_URL = 'http://localhost:3000';
+    // Display the loaded config value
+    apiBaseUrlDisplay.textContent = API_BASE_URL;
+
+    // HARDCODED API ENDPOINTS - Paths are relative to the base URL
     const API_ENDPOINTS = {
         'local': '/api/upload/local',
         'filebase': '/api/upload/filebase'
@@ -182,7 +208,7 @@
         });
     }
 
-    // --- GitHub Utility Functions (Unchanged) ---
+    // --- GitHub Utility Functions ---
     async function getFileSha(owner, repo, path, branch, token) {
         const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}${branch ? '?ref=' + encodeURIComponent(branch) : ''}`;
         const r = await fetch(url, { headers: { Authorization: 'token ' + token, Accept: 'application/vnd.github.v3+json' }});
@@ -196,12 +222,12 @@
         }
     }
 
-    // --- Upload Handlers (Unchanged logic) ---
+    // --- Upload Handlers ---
     
     async function uploadToGitHub() {
         const owner = document.getElementById('owner').value.trim();
-        const repo = 'hooks'; // hardcoded
-        const branch = 'main'; // hardcoded
+        const repo = 'hooks'; 
+        const branch = 'main'; 
         const message = document.getElementById('message').value.trim() || 'Add recording';
         const token = document.getElementById('token').value.trim();
 
@@ -248,8 +274,13 @@
     }
 
     async function uploadToCustomApi() {
-        const apiKey = customApiKeyInput.value.trim(); // Use the new ID reference
+        const apiKey = customApiKeyInput.value.trim(); 
         
+        // Safety check to notify user if fallback is used
+        if (API_BASE_URL === DEFAULT_CONFIG.API_BASE_URL) {
+             console.warn('Using fallback API Base URL.');
+        }
+
         if (!apiKey) { setStatus('Custom API: Please fill API Key.'); return; }
         if (!recordedBlob) { setStatus('No recording available.'); return; }
 
@@ -266,6 +297,8 @@
 
             const encryptValue = encryptCheckbox.checked ? 'true' : 'false';
             const query = API_QUERY_TEMPLATE.replace('{encrypt}', encryptValue);
+            
+            // CONSTRUCT FULL URL using the loaded config variable
             const url = API_BASE_URL + endpointPath + query;
             
             const formData = new FormData();
@@ -321,7 +354,6 @@
         setStatus('Saved token cleared.');
     });
 
-    // NEW: Toggle function for the API key visibility
     toggleApiKeyCheckbox.addEventListener('change', () => {
         customApiKeyInput.type = toggleApiKeyCheckbox.checked ? 'text' : 'password';
     });
