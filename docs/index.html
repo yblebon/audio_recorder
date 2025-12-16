@@ -1,221 +1,386 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Record & Upload Audio</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
-    button { margin: .25rem; padding: .5rem 1rem; }
-    input, textarea { width: 100%; box-sizing: border-box; margin: .25rem 0 1rem; padding: .5rem; }
-    .small { font-size: 0.9rem; color: #444; }
-    pre { background:#f6f8fa; padding: .5rem; overflow:auto; }
-  </style>
+    <meta charset="utf-8" />
+    <title>Record & Upload Audio</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+        button { margin: .25rem; padding: .5rem 1rem; }
+        input, textarea { width: 100%; box-sizing: border-box; margin: .25rem 0 .5rem; padding: .5rem; }
+        .small { font-size: 0.9rem; color: #444; }
+        pre { background:#f6f8fa; padding: .5rem; overflow:auto; }
+        .upload-options > div { border: 1px solid #ccc; padding: 1rem; margin-top: 1rem; }
+        .upload-options label { display: block; margin-bottom: 0.5rem; }
+        .radio-group { display: flex; gap: 2rem; margin-bottom: 1rem; }
+        .radio-group input { width: auto; margin-right: 0.5rem; }
+        .api-select label { margin-right: 1.5rem; display: inline-block; }
+        /* Style for the API key row to align the toggle */
+        .api-key-row { display: flex; align-items: center; gap: 10px; }
+        .api-key-row input[type="text"], .api-key-row input[type="password"] { flex-grow: 1; }
+        .api-key-row label { flex-grow: 1; }
+        .api-key-toggle { margin: 0 0 0.5rem 0; padding: 0.5rem; }
+        .api-key-toggle input { width: auto; margin: 0; }
+    </style>
 </head>
 <body>
-  <h1>Record & Upload Audio</h1>
-  <p class="small">Warning: embedding a token client-side is insecure. Use a server-side flow for production.</p>
+    <h1>Record & Upload Audio</h1>
+    <p class="small">Warning: embedding a token client-side is insecure. Use a server-side flow for production.</p>
 
-  <label>GitHub owner (user/org)
-    <input id="owner" placeholder="GITHUB_OWNER" value="" />
-  </label>
+    <div>
+        <button id="startBtn">Start Recording</button>
+        <button id="stopBtn" disabled>Stop Recording</button>
+        <button id="playBtn" disabled>Play</button>
+        <button id="uploadBtn" disabled>Upload</button>
+    </div>
+    <audio id="player" controls style="display:block; margin-top:1rem;"></audio>
+    
+    <h2>Upload Target</h2>
+    <div class="radio-group">
+        <label><input type="radio" name="uploadTarget" value="github" id="targetGithub" checked> GitHub</label>
+        <label><input type="radio" name="uploadTarget" value="custom" id="targetCustom"> Custom API</label>
+    </div>
 
-  <label>Repository (hardcoded to "hooks")
-    <input id="repo" value="hooks" disabled />
-  </label>
+    <div class="upload-options">
+        
+        <div id="githubOptions">
+            <h3>GitHub Settings</h3>
+            <label>GitHub owner (user/org)
+                <input id="owner" placeholder="GITHUB_OWNER" value="" />
+            </label>
+            <label>Repository (hardcoded to "hooks")
+                <input id="repo" value="hooks" disabled />
+            </label>
+            <label>Branch (hardcoded to "main")
+                <input id="branch" value="main" disabled />
+            </label>
+            <label>Commit message
+                <input id="message" placeholder="Add recording" value="Add recording via web recorder" />
+            </label>
+            <label>GitHub Personal Access Token (scopes: repo)
+                <input id="token" placeholder="ghp_..." type="password" />
+            </label>
+            <div style="font-size:0.9rem;margin-bottom:1rem;">
+                <button id="saveTokenBtn">Save token to localStorage</button>
+                <button id="clearTokenBtn">Clear saved token</button>
+            </div>
+        </div>
+        
+        <div id="customApiOptions" style="display:none;">
+            <h3>Custom API Settings</h3>
+            
+            <div style="margin-bottom:1rem;">
+                <strong>1. Select Backend</strong>
+                <div class="api-select">
+                    <label>
+                        <input type="radio" name="apiBackend" value="local" id="backendLocal" checked> Local (<code>/api/upload/local</code>)
+                    </label>
+                    <label>
+                        <input type="radio" name="apiBackend" value="filebase" id="backendFilebase"> Filebase (<code>/api/upload/filebase</code>)
+                    </label>
+                </div>
+            </div>
 
-  <label>Branch (hardcoded to "main")
-    <input id="branch" value="main" disabled />
-  </label>
+            <div style="margin-bottom:1rem;">
+                <strong>2. Select Options</strong>
+                <label style="display:flex; align-items:center; gap: 10px; margin-top: 0.5rem;">
+                    <input type="checkbox" id="encryptCheckbox" checked style="width: auto; margin:0;">
+                    Encrypt Upload? (sets <code>encrypt={true/false}</code> in URL)
+                </label>
+            </div>
 
-  <label>Commit message
-    <input id="message" placeholder="Add recording" value="Add recording via web recorder" />
-  </label>
+            <strong>3. Authorization</strong>
+            <label>x-api-key
+                <input id="customApiKey" placeholder="Your API Key" value="bloomm1" type="password" />
+            </label>
+            <div class="api-key-toggle">
+                <label style="display:flex; align-items:center; gap: 5px;">
+                    <input type="checkbox" id="toggleApiKey" style="width: auto; margin: 0;"> Show Key
+                </label>
+            </div>
+        </div>
 
-  <label>GitHub Personal Access Token (scopes: repo)
-    <input id="token" placeholder="ghp_..." type="password" />
-  </label>
-  <div style="font-size:0.9rem;margin-bottom:1rem;">
-    <button id="saveTokenBtn">Save token to localStorage</button>
-    <button id="clearTokenBtn">Clear saved token</button>
-  </div>
+    </div>
 
-  <div>
-    <button id="startBtn">Start Recording</button>
-    <button id="stopBtn" disabled>Stop Recording</button>
-    <button id="playBtn" disabled>Play</button>
-    <button id="uploadBtn" disabled>Upload to GitHub</button>
-  </div>
-
-  <audio id="player" controls style="display:block; margin-top:1rem;"></audio>
-
-  <div style="margin-top:1rem;">
-    <strong>Status</strong>
-    <pre id="status">Idle</pre>
-  </div>
+    <div style="margin-top:1rem;">
+        <strong>Status</strong>
+        <pre id="status">Idle</pre>
+    </div>
 
 <script>
 (function(){
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const playBtn = document.getElementById('playBtn');
-  const uploadBtn = document.getElementById('uploadBtn');
-  const player = document.getElementById('player');
-  const status = document.getElementById('status');
+    // --- DOM Elements ---
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const playBtn = document.getElementById('playBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const player = document.getElementById('player');
+    const status = document.getElementById('status');
 
-  const tokenInput = document.getElementById('token');
-  const saveTokenBtn = document.getElementById('saveTokenBtn');
-  const clearTokenBtn = document.getElementById('clearTokenBtn');
+    const tokenInput = document.getElementById('token');
+    const saveTokenBtn = document.getElementById('saveTokenBtn');
+    const clearTokenBtn = document.getElementById('clearTokenBtn');
+    
+    // Custom API elements
+    const targetGithub = document.getElementById('targetGithub');
+    const targetCustom = document.getElementById('targetCustom');
+    const githubOptions = document.getElementById('githubOptions');
+    const customApiOptions = document.getElementById('customApiOptions');
+    const encryptCheckbox = document.getElementById('encryptCheckbox'); 
+    
+    const customApiKeyInput = document.getElementById('customApiKey'); // NEW ID for easy access
+    const toggleApiKeyCheckbox = document.getElementById('toggleApiKey'); // NEW element for toggle
 
-  // Load token from localStorage if present
-  const LS_KEY = 'gh_token_demo';
-  const saved = localStorage.getItem(LS_KEY);
-  if (saved) tokenInput.value = saved;
+    // NEW Backend radio buttons (kept for context, not modified)
+    // const backendLocal = document.getElementById('backendLocal');
+    // const backendFilebase = document.getElementById('backendFilebase');
 
-  saveTokenBtn.addEventListener('click', () => {
-    const v = tokenInput.value.trim();
-    if (!v) { setStatus('Token empty — nothing saved.'); return; }
-    localStorage.setItem(LS_KEY, v);
-    setStatus('Token saved to localStorage.');
-  });
+    // --- State Variables ---
+    let mediaStream = null;
+    let recorder = null;
+    let chunks = [];
+    let recordedBlob = null;
+    const LS_KEY = 'gh_token_demo';
+    
+    // HARDCODED API ENDPOINTS 
+    const API_BASE_URL = 'http://localhost:3000';
+    const API_ENDPOINTS = {
+        'local': '/api/upload/local',
+        'filebase': '/api/upload/filebase'
+    };
+    const API_QUERY_TEMPLATE = '?encrypt={encrypt}'; 
 
-  clearTokenBtn.addEventListener('click', () => {
-    localStorage.removeItem(LS_KEY);
-    tokenInput.value = '';
-    setStatus('Saved token cleared.');
-  });
+    // --- Utility Functions ---
+    function setStatus(s){ status.textContent = s; }
 
-  function setStatus(s){ status.textContent = s; }
-
-  let mediaStream = null;
-  let recorder = null;
-  let chunks = [];
-  let recordedBlob = null;
-
-  startBtn.addEventListener('click', async () => {
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder = new MediaRecorder(mediaStream);
-      chunks = [];
-      recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-      recorder.onstop = () => {
-        recordedBlob = new Blob(chunks, { type: 'audio/webm' });
-        player.src = URL.createObjectURL(recordedBlob);
-        player.style.display = 'block';
-        playBtn.disabled = false;
-        uploadBtn.disabled = false;
-        setStatus('Recording stopped — ready to play/upload.');
-      };
-      recorder.start();
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      setStatus('Recording...');
-    } catch (err) {
-      setStatus('Error accessing microphone: ' + (err.message || err));
+    function timestampString() {
+        const d = new Date();
+        const pad = n => String(n).padStart(2,'0');
+        const YYYY = d.getFullYear();
+        const MM = pad(d.getMonth() + 1);
+        const DD = pad(d.getDate());
+        const hh = pad(d.getHours());
+        const mm = pad(d.getMinutes());
+        const ss = pad(d.getSeconds());
+        return `${YYYY}${MM}${DD}-${hh}${mm}${ss}`;
     }
-  });
-
-  stopBtn.addEventListener('click', () => {
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(t => t.stop());
-      mediaStream = null;
+    
+    function getFilename() {
+        return `recording-${timestampString()}.webm`;
     }
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-  });
 
-  playBtn.addEventListener('click', () => {
-    if (player.src) player.play();
-  });
+    function blobToBase64(blob) {
+        return new Promise((res, rej) => {
+            const fr = new FileReader();
+            fr.onload = () => {
+                const dataUrl = fr.result;
+                const comma = dataUrl.indexOf(',');
+                res(dataUrl.slice(comma + 1));
+            };
+            fr.onerror = rej;
+            fr.readAsDataURL(blob);
+        });
+    }
 
-  function blobToBase64(blob) {
-    return new Promise((res, rej) => {
-      const fr = new FileReader();
-      fr.onload = () => {
-        const dataUrl = fr.result;
-        const comma = dataUrl.indexOf(',');
-        res(dataUrl.slice(comma + 1));
-      };
-      fr.onerror = rej;
-      fr.readAsDataURL(blob);
+    // --- GitHub Utility Functions (Unchanged) ---
+    async function getFileSha(owner, repo, path, branch, token) {
+        const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}${branch ? '?ref=' + encodeURIComponent(branch) : ''}`;
+        const r = await fetch(url, { headers: { Authorization: 'token ' + token, Accept: 'application/vnd.github.v3+json' }});
+        if (r.status === 200) {
+            const j = await r.json();
+            return j.sha;
+        } else if (r.status === 404) {
+            return null;
+        } else {
+            throw new Error('Failed to check file: ' + r.status + ' ' + await r.text());
+        }
+    }
+
+    // --- Upload Handlers (Unchanged logic) ---
+    
+    async function uploadToGitHub() {
+        const owner = document.getElementById('owner').value.trim();
+        const repo = 'hooks'; // hardcoded
+        const branch = 'main'; // hardcoded
+        const message = document.getElementById('message').value.trim() || 'Add recording';
+        const token = document.getElementById('token').value.trim();
+
+        if (!owner || !token) { setStatus('GitHub: Please fill owner and token.'); return; }
+        if (!recordedBlob) { setStatus('No recording available.'); return; }
+
+        try {
+            setStatus('GitHub: Preparing audio...');
+            const b64 = await blobToBase64(recordedBlob);
+
+            const fname = getFilename(); 
+            const folder = 'uploads/recordings';
+            const path = folder + '/' + fname;
+
+            setStatus('GitHub: Checking existing file (to get SHA if needed)...');
+            const sha = await getFileSha(owner, repo, path, branch, token);
+
+            const payload = {
+                message: `${message} — ${fname}`,
+                content: b64,
+            };
+            if (branch) payload.branch = branch;
+            if (sha) payload.sha = sha;
+
+            setStatus('GitHub: Uploading to ' + path + ' ...');
+            const putUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`;
+            const resp = await fetch(putUrl, {
+                method: 'PUT',
+                headers: {
+                    Authorization: 'token ' + token,
+                    Accept: 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const resultText = await resp.text();
+            if (!resp.ok) throw new Error('GitHub API error: ' + resp.status + ' ' + resultText);
+            const resultJson = JSON.parse(resultText);
+            setStatus('GitHub Upload successful. File URL: ' + (resultJson.content && resultJson.content.html_url ? resultJson.content.html_url : '(no html_url returned)'));
+        } catch (err) {
+            setStatus('GitHub Error: ' + (err.message || err));
+        }
+    }
+
+    async function uploadToCustomApi() {
+        const apiKey = customApiKeyInput.value.trim(); // Use the new ID reference
+        
+        if (!apiKey) { setStatus('Custom API: Please fill API Key.'); return; }
+        if (!recordedBlob) { setStatus('No recording available.'); return; }
+
+        try {
+            setStatus('Custom API: Preparing upload...');
+            
+            const selectedBackend = document.querySelector('input[name="apiBackend"]:checked').value;
+            const endpointPath = API_ENDPOINTS[selectedBackend];
+
+            if (!endpointPath) {
+                setStatus('Custom API Error: Invalid backend selected.');
+                return;
+            }
+
+            const encryptValue = encryptCheckbox.checked ? 'true' : 'false';
+            const query = API_QUERY_TEMPLATE.replace('{encrypt}', encryptValue);
+            const url = API_BASE_URL + endpointPath + query;
+            
+            const formData = new FormData();
+            
+            const fname = getFilename(); 
+            formData.append('file', recordedBlob, fname);
+            
+            setStatus(`Custom API: Uploading ${fname} to ${url} ...`);
+            
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'x-api-key': apiKey
+                },
+                body: formData
+            });
+
+            const resultText = await resp.text();
+            
+            if (!resp.ok) {
+                throw new Error('Custom API error: ' + resp.status + ' ' + resultText);
+            }
+            
+            try {
+                const resultJson = JSON.parse(resultText);
+                setStatus('Custom API Upload successful. Response: ' + JSON.stringify(resultJson, null, 2));
+            } catch {
+                setStatus('Custom API Upload successful. Raw response: ' + resultText);
+            }
+
+        } catch (err) {
+            setStatus('Custom API Error: ' + (err.message || err));
+        }
+    }
+
+
+    // --- Event Listeners and Initial Setup ---
+
+    // Load token from localStorage if present
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) tokenInput.value = saved;
+
+    saveTokenBtn.addEventListener('click', () => {
+        const v = tokenInput.value.trim();
+        if (!v) { setStatus('Token empty — nothing saved.'); return; }
+        localStorage.setItem(LS_KEY, v);
+        setStatus('Token saved to localStorage.');
     });
-  }
 
-  function timestampString() {
-    const d = new Date();
-    const pad = n => String(n).padStart(2,'0');
-    const YYYY = d.getFullYear();
-    const MM = pad(d.getMonth() + 1);
-    const DD = pad(d.getDate());
-    const hh = pad(d.getHours());
-    const mm = pad(d.getMinutes());
-    const ss = pad(d.getSeconds());
-    return `${YYYY}${MM}${DD}-${hh}${mm}${ss}`;
-  }
+    clearTokenBtn.addEventListener('click', () => {
+        localStorage.removeItem(LS_KEY);
+        tokenInput.value = '';
+        setStatus('Saved token cleared.');
+    });
 
-  async function getFileSha(owner, repo, path, branch, token) {
-    const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}${branch ? '?ref=' + encodeURIComponent(branch) : ''}`;
-    const r = await fetch(url, { headers: { Authorization: 'token ' + token, Accept: 'application/vnd.github.v3+json' }});
-    if (r.status === 200) {
-      const j = await r.json();
-      return j.sha;
-    } else if (r.status === 404) {
-      return null;
-    } else {
-      throw new Error('Failed to check file: ' + r.status + ' ' + await r.text());
+    // NEW: Toggle function for the API key visibility
+    toggleApiKeyCheckbox.addEventListener('change', () => {
+        customApiKeyInput.type = toggleApiKeyCheckbox.checked ? 'text' : 'password';
+    });
+
+
+    // Toggle Upload Options based on radio button selection
+    function toggleOptions() {
+        const isGithub = targetGithub.checked;
+        githubOptions.style.display = isGithub ? 'block' : 'none';
+        customApiOptions.style.display = isGithub ? 'none' : 'block';
     }
-  }
+    targetGithub.addEventListener('change', toggleOptions);
+    targetCustom.addEventListener('change', toggleOptions);
+    toggleOptions(); // Initial call to set correct display
 
-  uploadBtn.addEventListener('click', async () => {
-    const owner = document.getElementById('owner').value.trim();
-    const repo = 'hooks'; // hardcoded
-    const branch = 'main'; // hardcoded
-    const message = document.getElementById('message').value.trim() || 'Add recording';
-    const token = document.getElementById('token').value.trim();
+    startBtn.addEventListener('click', async () => {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            recorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' }); 
+            chunks = [];
+            recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+            recorder.onstop = () => {
+                recordedBlob = new Blob(chunks, { type: 'audio/webm' });
+                player.src = URL.createObjectURL(recordedBlob);
+                player.style.display = 'block';
+                playBtn.disabled = false;
+                uploadBtn.disabled = false;
+                setStatus('Recording stopped — ready to play/upload.');
+            };
+            recorder.start();
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            setStatus('Recording...');
+        } catch (err) {
+            setStatus('Error accessing microphone: ' + (err.message || err));
+        }
+    });
 
-    if (!owner || !token) { setStatus('Please fill owner and token.'); return; }
-    if (!recordedBlob) { setStatus('No recording available.'); return; }
+    stopBtn.addEventListener('click', () => {
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(t => t.stop());
+            mediaStream = null;
+        }
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    });
 
-    try {
-      setStatus('Preparing audio...');
-      const b64 = await blobToBase64(recordedBlob);
+    playBtn.addEventListener('click', () => {
+        if (player.src) player.play();
+    });
 
-      // Hardcoded folder path
-      const folder = 'uploads/recordings';
-      const fname = `recording-${timestampString()}.webm`;
-      const path = folder + '/' + fname;
-
-      setStatus('Checking existing file (to get SHA if needed)...');
-      const sha = await getFileSha(owner, repo, path, branch, token);
-
-      const payload = {
-        message: `${message} — ${fname}`,
-        content: b64,
-      };
-      if (branch) payload.branch = branch;
-      if (sha) payload.sha = sha;
-
-      setStatus('Uploading to GitHub as ' + path + ' ...');
-      const putUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`;
-      const resp = await fetch(putUrl, {
-        method: 'PUT',
-        headers: {
-          Authorization: 'token ' + token,
-          Accept: 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const resultText = await resp.text();
-      if (!resp.ok) throw new Error('GitHub API error: ' + resp.status + ' ' + resultText);
-      const resultJson = JSON.parse(resultText);
-      setStatus('Upload successful. File URL: ' + (resultJson.content && resultJson.content.html_url ? resultJson.content.html_url : '(no html_url returned)'));
-    } catch (err) {
-      setStatus('Error: ' + (err.message || err));
-    }
-  });
+    uploadBtn.addEventListener('click', async () => {
+        if (targetGithub.checked) {
+            await uploadToGitHub();
+        } else {
+            await uploadToCustomApi();
+        }
+    });
 
 })();
 </script>
